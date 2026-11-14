@@ -1,0 +1,34 @@
+# --- SECRETS: never commit ---
+# Nebius login, API key and private-bucket keys for team participant-16
+*.private.json
+# The zip contains the same credentials file
+hackathon_information/participant-16.zip
+# One redeemable $1000 JapanFold compute code per team, all 16 teams
+hackathon_information/japanfold-oslo-hackathon-codes*.txt
+# SSH / cloud keys
+*.pem
+id_*
+*_rsa
+*_ed25519
+.env
+.env.*
+
+# --- editors / tooling ---
+.idea/
+.qodo/
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# --- large files kept local only ---
+# 4.2 MB organisers' handout; not our work, dominated the repo size
+hackathon_information/participants_guide.pdf
+
+# --- large / regenerable outputs ---
+# (results/ and nebius-runs/ hold run ids and scores - those SHOULD be committed,
+#  so they are deliberately not ignored here)
+*.ckpt
+*.pt
+*.npz
