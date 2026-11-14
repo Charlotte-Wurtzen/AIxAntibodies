@@ -31,6 +31,11 @@ no unpaired cysteines · immunum numbering confidence ≥0.1.
 ⚠ The PDF states the mutation threshold as both "at least 2" (p2) and "strictly more than 2" (p7).
 **Use >2 (i.e. ≥3)** to stay valid under either reading. Confirm with the Apheris team on site.
 
+🚨 **`abguard` is NOT installed on this VM** (checked 14 Nov: no binary on `PATH`, no Python
+module, nothing on disk), although the PDF lists it as pre-installed. Get it from the organisers
+early — it decides each design's track, and without it the hard filters cannot be checked at all.
+Until it arrives, implement the filters above locally as a provisional gate.
+
 ## Model choice — the highest-leverage decision
 RFD4-Proteina weights, with the organisers' own benchmark on the trastuzumab CDRH3 task:
 
@@ -57,18 +62,37 @@ The HER2 weights **only redesign CDRH3**; to touch other CDRs use `antibody-2026
 - Also run `finetune` only if time allows; it trains on your own structures.
 
 ## Calibrate scores before trusting them
-Provided true negatives: **454 measured non-binding VHH–antigen pairs, 21 of which score
-AlphaFold3 ipTM ≥0.7.** Use them to set your own confidence thresholds — an ipTM cutoff picked
-by intuition will pass known non-binders. This is the cheapest credibility win available, and
-directly serves the 40% judgment criterion.
+An ipTM cutoff picked by intuition will pass known non-binders. Calibrating one is the cheapest
+credibility win available, and directly serves the 40% judgment criterion.
 
-Trastuzumab data: **524,346 CDRH3 variants with FACS affinity classes** (Chinery et al.) and
-~700 optimisation designs, 190 with SPR. Enough to train or validate your own ranker.
+Calibrate on the **shuffled-pair ipTM matrices**, `~/hackathon-data/zenodo-18390239-ab-ag-complexes/iptm_unz/`:
+91×91 per folding model (AF3, Boltz-2, Chai-1), 91 cognate pairs on the diagonal versus ~8,100
+shuffled pairs off it. These negatives are *computational* — pairs never reported as binding, never
+measured — so call them that, not measured negatives.
+⚠ The PDF's **454 measured non-binding pairs are listed as unpublished and are NOT in the bucket.**
+Do not plan a step around them without asking the organisers.
+
+Measured evidence is thin but pointed: of 12 non-cognate VHH–antigen pairs measured by SPR, none
+gave a reportable affinity while eleven scored **AF3 ipTM 0.75–0.90**; meanwhile `8w90_a` binds CD4
+at **7.41 nM with ipTM 0.12**. Confidence and binding are close to orthogonal here.
+(`~/hackathon-data/sigma2-ab-ag-champloo/spr-supplementary/`. The authors are explicit that no
+reportable fit does NOT confirm non-binding, so these 12 are not clean negatives either.)
+
+Trastuzumab data: **524,346 CDRH3 variants with FACS classes** (Chinery et al.) and ~700
+optimisation designs, 190 with SPR. Enough to train a binder/non-binder classifier — **but not an
+affinity ranker.** Measured on our own data (`her2-data-exploration.md`): FACS class does not track
+KD (median 8.0 / 4.6 / 15.4 nM for high / medium / low, overlapping ranges), and a FACS-derived PWM
+scores Spearman **−0.116** against log KD versus +0.412 for plain edit distance. **Rank on the 190
+SPR KDs**; use FACS only to generate loops and to gate binder/non-binder.
+Pre-binarised splits with clonotype clustering are in
+`~/hackathon-data/zenodo-10831512-trastuzumab-ngs/ngs_unz/data/affinity_data/her2/` —
+**use the clonotype split, not the random one**, or neighbours one mutation apart leak across
+train and test and the validation score is fiction.
 
 ## Environment
 Per-team Nebius VM: 1× H100, 16 vCPU, 200 GB RAM, 500 GB disk, Ubuntu 24.04, SSH (IP + key).
 Pre-installed: Claude Code · Foundry models as Docker images (`foundry-toolkit module list`,
-see `Tutorial.html`) · RCSB MCP · `abguard` · read-only creds for `s3://apheris-oslo-hackathon`
+see `Tutorial.html`) · RCSB MCP · read-only creds for `s3://apheris-oslo-hackathon`
 (`aws s3 sync s3://apheris-oslo-hackathon/<folder> ./data`; more data may appear during the day).
 Guide + ready-made HER2 script: `rfd4-proteina/docs/` in the bucket.
 Also available: JapanFold (RoseTTAFold3, OpenDDE, AF2-IG as a Claude Code skill), Nebius Tools
