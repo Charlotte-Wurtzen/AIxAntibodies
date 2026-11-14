@@ -3,15 +3,45 @@
 What each script does, grouped by where it sits in the pipeline. The pipeline
 itself is documented in [`../filter-and-fold-pipeline.md`](../filter-and-fold-pipeline.md).
 
-Everything here is stdlib-only except `binding_scoring/`, which has its own
-`requirements.txt`.
+The pipeline and gate scripts are stdlib-only. The exceptions: `binding_scoring/`
+has its own `requirements.txt`; `liability.py` needs `biotite` and `numpy`; and
+`stability_solubility.py` needs those plus `torch`, `omegaconf` and the
+ThermoMPNN / ProteinMPNN checkouts.
+
+---
+
+## The full pipeline
+
+End to end, a submission takes seven stages. **`run_pipeline.sh` covers stages
+2, 4 and 5 only** — it starts from a design run that has already finished and
+stops at `refold_metrics.csv`. Its `all` argument means all of *its* stages, not
+the full pipeline: the generation at the front, the binding gate, and the
+developability scoring and prioritisation at the back are separate steps.
+
+| # | stage | how it is run |
+| --- | --- | --- |
+| 1 | **sequence generation** — RFD4-Proteina `design`, one run per weight/seed | outside this repo: the Apheris design image against `~/george/rfd4/runs/<run>/`. Per-run provenance (weight, seed, counts) is written up alongside the results, e.g. [`../results_novel/her2-n200-novel-seed50/generation.md`](../results_novel/her2-n200-novel-seed50/generation.md) |
+| 2 | **novelty and format filtering** — `abguard`'s hard filters, which also *assign* the track | `run_pipeline.sh … gate`, via `build_abguard_input.py` |
+| 3 | **binding prediction** — the FACS binder/non-binder gate | `binding_scoring/predict.py` (also called from `score_designs.py`) |
+| 4 | **structure generation** — `refold-prepare`, then fold holo and apo | `run_pipeline.sh … prepare` / `filter` / `fold` |
+| 5 | **score extraction** — `refold-score`, then the antibody↔antigen interface block | `run_pipeline.sh … score`, then `extract_interface_scores.py` |
+| 6 | **developability** — liabilities, stability and solubility proxies on the shortlist | `liability.py`, `stability_solubility.py` |
+| 7 | **prioritisation** — join everything, apply the trastuzumab threshold, emit a ranked top-20 with a keep/cut reason each | `score_designs.py` joins; **the ranking itself is not yet written** (see [Not yet written](#not-yet-written)) |
+
+Stage 1 is deliberately outside the runner: a design run takes the GPU for a
+long time and is driven by hand so the weight and seed are a conscious choice
+per `CLAUDE.md`'s model-choice table. Stage 3 is independent of 4–5 and can run
+at any point after stage 2.
 
 ---
 
 ## The pipeline runner
 
 ### `run_pipeline.sh`
-Runs the whole chain, one stage per argument:
+Stages 2, 4 and 5 above, one stage per argument. It expects a **finished**
+design run (`<run>/design/generation/inference_metrics/` must exist — the `gate`
+stage exits with a clear message until it does), and it does not generate
+sequences, score the FACS gate, extract interface scores, or rank anything:
 
 ```bash
 bash scripts/run_pipeline.sh <run-name> gate|prepare|filter|fold|score|all
@@ -105,6 +135,91 @@ Joins everything into one table per run: runs the FACS gate over
 `interface_scores.csv` by `sequence_id`. The submission row set is authoritative,
 so every design appears with a `refolded` flag rather than being silently
 dropped.
+
+---
+
+## Developability — scoring the shortlist
+
+Both run on the refolded structures, so they come after `fold`. Neither is a
+hard filter: they exist to break ties and to catch a design that would fail to
+express. Both need `biotite`; `stability_solubility.py` also needs the
+ThermoMPNN and ProteinMPNN checkouts under `~/tools/`.
+
+### `liability.py`
+30 geometry tests on each refolded complex, one CSV row per design — exposure
+of oxidation-prone Met/Trp, deamidation geometry, N-glycosylation sequons,
+unpaired cysteines, charge and hydrophobic patches, clashes, buried surface
+area and interface H-bond counts. Pure measurement: no weights, no GPU, no
+network.
+
+```bash
+python3 scripts/liability.py refolded/ --baseline wt.csv -o results/liabilities.csv
+```
+
+**Always pass `--baseline`** (a run of this script over the wild-type complex).
+Motif-based liability scanning over-predicts: trastuzumab's own CDRH3
+(`WGGDGFYAMD`) carries W, DG and M, so against absolute thresholds wild type
+trips three major flags and every derived design inherits them — the score
+stops discriminating. With a baseline, only designs genuinely worse than the
+marketed drug are penalised; without one the row records
+`scoring_mode=absolute_uncalibrated`.
+
+The severity model is deliberately top-heavy. `liability_score` is a weighted
+sum (lower is better) and `tier` is `pass` / `review` / `fail`, but only five
+conditions fail: a glycosylation sequon in CDRH3, too many interface or
+internal clashes, a CDRH3 that could not be located, and an odd cysteine count.
+Two of those fail the *structure*, not the sequence — refold and look again
+before cutting the design. Every raw measurement stays in the table, so the
+tier can be ignored and a different ranking built from the columns.
+
+Each threshold is tagged in the source as `[LIT]`, `[LIT-LOOSE]` or
+`[HEURISTIC]`; `--show-thresholds` prints the lot. The fractional-exposure
+numbers use an approximate reference SASA table and are **not** interchangeable
+with published cutoffs (TAP's 7.5%, the ~9% methionine figure). H-bonds are
+counted on a heavy-atom distance criterion because refolded models carry no
+hydrogens, so they are polar contacts with compatible geometry, not H-bonds
+proper — `hbond_method` records which criterion ran.
+
+### `stability_solubility.py`
+Thermostability and solubility **proxies**, two model families over the same
+refolded folder:
+
+| columns | model | what |
+| --- | --- | --- |
+| `thermo_*` | ThermoMPNN | ddG of each design's substitutions vs wild type |
+| `mpnn_nll_*`, `mpnn_delta` | ProteinMPNN | sequence fit to its own backbone, soluble vs standard weights |
+
+```bash
+python scripts/stability_solubility.py refolded/ --wt wt_1n8z.cif -o results/stab_sol.csv
+```
+
+ThermoMPNN is run **once** as a saturation scan of the wild-type heavy chain;
+every design is then a table lookup, which is what makes 142 designs cheap.
+The cost is four caveats, all in the docstring: the sum is additive over
+single-mutation predictions (many changes at once is extrapolation), CDRH3
+substitutions are scored on the *wild-type* loop conformation, the heavy chain
+only is seen so the VH–VL interface is invisible, and positions inside an indel
+cannot be scored — those are counted in `thermo_n_unmapped`. The script asserts
+that ThermoMPNN's wild-type letters agree with the WT sequence and stops if they
+do not, rather than silently scoring the wrong positions.
+
+⚠ **The ddG sign convention is an inference, not documented.** ThermoMPNN's
+README does not state it; it was read off the repo's own 2OCJ example output
+(hydrophobic→D/K/P/G averaged +2.25, conservative swaps +0.53), giving
+positive = destabilising, so **lower `thermo_ddg_sum` is better**. Confirm
+before ranking on it.
+
+`mpnn_nll_*` is mean negative log-likelihood per residue (lower = the model
+likes the sequence more) — sequence–structure compatibility, *not* solubility.
+`mpnn_delta` (soluble minus standard) is an unvalidated solubility heuristic.
+`CLAUDE.md` asks for Aggrescan 3D, SoluProt and NetSolP on the shortlist;
+`mpnn_delta` is the only one of the four implemented here, and NetSolP still
+needs running on the web server for an actual solubility readout. Everything is
+also emitted `*_vs_wt`, since the wild type is scored in the same pass.
+
+> Both scripts measure or predict **developability, not binding**. A liability
+> or solubility fix changes the sequence, so per `CLAUDE.md` the binding score
+> has to be recomputed afterwards.
 
 ---
 
