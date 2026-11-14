@@ -26,7 +26,7 @@ developability scoring and prioritisation at the back are separate steps.
 | 4 | **structure generation** — `refold-prepare`, then fold holo and apo | `run_pipeline.sh … prepare` / `filter` / `fold` |
 | 5 | **score extraction** — `refold-score`, then the antibody↔antigen interface block | `run_pipeline.sh … score`, then `extract_interface_scores.py` |
 | 6 | **developability** — liabilities, stability and solubility proxies on the shortlist | `liability.py`, `stability_solubility.py` |
-| 7 | **prioritisation** — join everything, apply the trastuzumab threshold, emit a ranked top-20 with a keep/cut reason each | `score_designs.py` joins; **the ranking itself is not yet written** (see [Not yet written](#not-yet-written)) |
+| 7 | **prioritisation** — join everything, apply the trastuzumab threshold, emit a ranked shortlist with a keep/cut reason each | `score_designs.py` joins the per-run tables; `score_designs_ziyu.py` gates and ranks |
 
 Stage 1 is deliberately outside the runner: a design run takes the GPU for a
 long time and is driven by hand so the weight and seed are a conscious choice
@@ -135,6 +135,60 @@ Joins everything into one table per run: runs the FACS gate over
 `interface_scores.csv` by `sequence_id`. The submission row set is authoritative,
 so every design appears with a `refolded` flag rather than being silently
 dropped.
+
+---
+
+## Prioritisation — gating and ranking
+
+### `score_designs_ziyu.py`
+The ranking step. Joins the three scoring tracks on design id and emits a ranked
+shortlist with a keep/cut reason per design.
+
+```bash
+python3 scripts/score_designs_ziyu.py \
+    --interface      results_novel/<run>/iptm_binder_antigen.csv \
+    --classifier     <run>/passing.with_p_high.csv \
+    --developability results/designs_combined.csv \
+    -o scored_designs.csv          # add --keep-all for all designs + verdicts
+```
+
+Three deliberate choices, all argued in the module docstring:
+
+- **Developability is a gate, not a score term.** `tier_holo`/`tier_apo` must both
+  be `pass`, `n_major` must be 0, and `liability_score`, `bsa_per_side` and
+  `thermo_ddg_sum / thermo_n_subst_scored` must clear their thresholds. A design
+  that would fail to express is excluded outright rather than penalised.
+- **The interface threshold is a measured reference, not a round number.**
+  `--ref-iptm` defaults to **0.231**, trastuzumab's own score from
+  [`../results_novel/her2-n200-novel-seed50/reference_scores.csv`](../results_novel/her2-n200-novel-seed50/reference_scores.csv);
+  `--ref-best` 0.282 is the best SPR-validated reference. On this system the
+  ipTM scale is compressed — sub-nanomolar binders score 0.181–0.282 — so a
+  cutoff of 0.8 would reject everything, including the drug.
+- **`p_high` is carried as an annotation, never scored.** Its Spearman rho
+  against the interface score is −0.067 on this cohort, so weighting it would
+  add noise; it is used only as a last-resort tiebreak and the disagreement is
+  reported. ⚠ On the current 20-design shortlist the FACS gate disagrees on
+  **18 of 20** — the structural and sequence evidence point different ways, and
+  that has to be stated in the write-up rather than hidden in a stderr line.
+
+Scored components (`iptm_binder_antigen_max` 0.50, `cdrh3_plddt_mean` 0.20,
+`thermo_ddg_per_subst` 0.15, `mpnn_delta_vs_wt` 0.15) are converted to
+cohort percentiles first, since the raw units are incommensurable. Percentiles
+are computed over **all** designs, not just survivors, so a design's percentile
+does not move when the gates are retuned, and the weights renormalise when a
+field is blank so a missing value is not scored as a zero.
+
+`--family-cap` (default 2) thins near-duplicates — novel-seed50 collapses onto a
+few CDRH3 motifs, and without the cap the shortlist is one loop repeated. Rows
+dropped by it stay in the output as `held_family_cap` / `duplicate_cdrh3`.
+
+⚠ The `tier` column is an **ipTM band against the references** (A > 0.40,
+B > `--ref-best`, C > `--ref-iptm`) — it is *not* Adaptyv's S/A/B outcome tier.
+
+Measured on `her2-n200-novel-seed50`: 142 designs → 27 pass both gates → 24
+unique CDRH3 → 20 selected (A=6, B=9, C=5), in
+[`../scored_designs.csv`](../scored_designs.csv) with the full cohort in
+[`../scored_designs_all.csv`](../scored_designs_all.csv).
 
 ---
 
@@ -252,7 +306,21 @@ FACS-derived score.
 
 - **An affinity ranker.** `CLAUDE.md` calls for ranking on the 190 SPR KDs; no
   such model exists. Everything above is either a hard gate or structural
-  confidence, and neither predicts KD.
-- **A prioritisation step.** Nothing sorts the joined table, applies the
-  trastuzumab threshold, or emits a ranked top-20 with a keep/cut reason per
-  design.
+  confidence, and neither predicts KD. `score_designs_ziyu.py` ranks on
+  structural confidence as a *proxy* and says so — across four references
+  spanning a 4× range in measured KD the ordering was unrelated to affinity.
+- **Epitope preservation.** The second of the three axes the submission is
+  graded on is not scored anywhere. Nothing compares a design's interface
+  *location* against trastuzumab's, so a design could score well and still bind
+  a different epitope. `bsa_per_side` is a size, not a position.
+- **A track label on the ranked output.** Tracks are assigned by `abguard` and
+  evaluated independently, but `scored_designs.csv` carries no de novo /
+  optimisation column, so the per-track mix of the final 20 is not visible where
+  the selection is made.
+- **A `--top-n` cap.** The shortlist is 20 because the family cap happens to
+  land there, not because anything enforces the submission limit.
+- **A rerunnable path from a clean checkout.** `score_designs_ziyu.py` reads
+  `designs_combined.csv` and the classifier table from outside this repo
+  (`/home/hackathon/results/`, `/home/hackathon/ziyu/`), and nothing here builds
+  `designs_combined.csv` — it is a hand-made join of the `liability.py` and
+  `stability_solubility.py` outputs.
