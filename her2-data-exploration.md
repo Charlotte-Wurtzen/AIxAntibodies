@@ -1,7 +1,8 @@
 # HER2 / trastuzumab data exploration
 
 Oslo AI × Antibodies hackathon, 14 November 2026.
-Source: `~/hackathon-data/her2-trastuzumab/` (from `s3://apheris-oslo-hackathon/data/`).
+Sources: `~/hackathon-data/` (from `s3://apheris-oslo-hackathon/data/`) — chiefly
+`her2-trastuzumab/`, with the data inventory in §6 covering the other folders.
 Reproduce with `python3 scripts/explore.py` and `python3 scripts/pwm_test.py` (stdlib only).
 
 Both tables come from [Chinery et al.](https://www.biorxiv.org/content/10.1101/2024.03.26.586756v2),
@@ -142,7 +143,64 @@ novelty filter forces every submission to ≥4 edits.
 
 ---
 
-## 6. What the data supports for ranking designs
+## 6. Where the binder / non-binder data actually is
+
+Three distinct kinds of negative, which must not be conflated.
+
+### 6.1 HER2 / trastuzumab — real labelled binders and non-binders, at scale
+
+| Data | Positives | Negatives | Location |
+| --- | --- | --- | --- |
+| FACS 3-class | `high` 172,149 | `low` 162,186, `medium` 190,011 | `~/hackathon-data/her2-trastuzumab/facs_unz/tz_her2_facs_3classes_524346.csv` |
+| Same, pre-binarised with splits | label 1 = 172,149 | label 0 = 352,197 | `~/hackathon-data/zenodo-10831512-trastuzumab-ngs/ngs_unz/data/affinity_data/her2/her2_aff_large/` |
+| Mason et al. | 8,935 | 25,114 | `.../her2/mason_et_al/` |
+| Shanehsazzadeh + large-neg | 198 | 376 | `.../her2/shanehsazzaddeh_and_her2_aff_large_neg/` |
+| SPR | 190 with KD | 460 `no_reportable_kd` | `~/hackathon-data/her2-trastuzumab/trastuzumab_her2_spr_all_768.csv` |
+
+The NGS archive (`zenodo-10831512`) holds the same 524,346 variants already split, with columns
+`seq,class,label,edit_distance,affinity`, and offers **clonotype splits** alongside random ones
+(`remove_overlap/clonotype_split/0.7_0.15_0.15/`).
+
+⚠ **Use the clonotype split, not the random split.** Random splits leak badly on this data:
+variants one mutation apart land in both train and test, so a random-split validation score is
+inflated. The clonotype split reports 13,829 / 251 / 706 clusters across train/val/test.
+
+### 6.2 VHH–antigen structural set — negatives are computational, not measured
+
+`~/hackathon-data/zenodo-18390239-ab-ag-complexes/iptm_unz/` holds three 91×91 ipTM matrices
+(AF3, Boltz-2, Chai-1): **91 cognate pairs on the diagonal, ~8,100 shuffled pairs off it**. The
+off-diagonal pairs are *assumed* non-binders because the nanobody and antigen were never reported
+as a pair — none was measured.
+
+This is still the right set for calibration: it answers "how often does my confidence score rank a
+shuffled pair above a real one", which is what sets a threshold. But do not describe these as
+measured non-binders.
+
+### 6.3 Measured VHH non-binders — 12 pairs, heavily caveated
+
+`~/hackathon-data/sigma2-ab-ag-champloo/spr-supplementary/spr_table_s1_pairwise.csv`: 29 rows,
+17 reported — 5 cognate (4 with a fitted KD: 0.401, 4.03, 7.41, 767 nM) and 12 non-cognate, none
+with a reportable affinity. The authors' README is explicit: *"N/A denotes no reportable affinity
+fit, NOT confirmed non-binding. The N/A rows must not be relabelled as measured true negatives."*
+
+Too small to train on, but it contains the single sharpest illustration of the failure mode:
+**`8w90_a` binds CD4 at 7.41 nM with AF3 ipTM 0.12**, while eleven non-binding pairs scored
+ipTM 0.75–0.90.
+
+The 14-target cross-reactivity screen (`spr_crossreactivity_14target.csv`) adds a developability
+warning: `8c5h_n`, the best-expressing design in the panel, bound 11 of 14 targets — polyreactive
+rather than specific.
+
+### 6.4 Not in the bucket
+
+The task PDF's **454 SPR-measured VHH–antigen true negatives** (21 scoring AF3 ipTM ≥ 0.7) and the
+2 non-cognate interaction data points are listed there as **unpublished**. They are described in
+the brief but are not in `s3://apheris-oslo-hackathon/`. Do not build a step that depends on them
+without asking the organisers.
+
+---
+
+## 7. What the data supports for ranking designs
 
 Ranked by how much evidence there is behind each:
 
@@ -151,13 +209,16 @@ Ranked by how much evidence there is behind each:
    output as a coarse filter (3–5 bins) rather than a fine ordering. Hold out the 9 sub-nanomolar
    novelty-passing variants as your acceptance test: a ranker that cannot surface those is not
    ranking affinity.
-2. **Use the 460 `no_reportable_kd` rows as negatives.** Expressed, measured, did not bind — the
-   most valuable label in the table, and far more numerous than the positives.
-3. **Calibrate structural confidence before trusting it.** `~/hackathon-data/sigma2-ab-ag-champloo/`
-   and `~/hackathon-data/zenodo-18390239-ab-ag-complexes/` hold 454 SPR-measured non-binders (21
-   scoring AF3 ipTM ≥ 0.7) and 1.8M predictions over 106 cognate / 11,342 non-cognate pairs. Fit
-   your ipTM / min_ipae / ipSAE threshold on that, rather than assuming one. Rank within a single
-   folding model only — scores are not comparable across models.
+2. **Use the 460 `no_reportable_kd` rows as negatives**, labelled honestly. Same assay, same
+   target, far more numerous than the positives — the most useful negative set available for HER2.
+   But "no reportable KD" is not confirmed non-binding: it can mean genuinely non-binding, too weak
+   to fit, or poor expression. Call them *no measurable binding* and expect label noise.
+3. **Calibrate structural confidence before trusting it**, on the shuffled-pair matrices in
+   `~/hackathon-data/zenodo-18390239-ab-ag-complexes/iptm_unz/` (91 cognate vs ~8,100 shuffled, per
+   folding model). Fit your ipTM / min_ipae / ipSAE threshold there rather than assuming one, and
+   rank within a single folding model only — scores are not comparable across models. Note these
+   negatives are computational, not measured (§6.2), and that the PDF's 454 measured non-binders
+   are not in the bucket (§6.4).
 4. **Gate on `abguard` first, not last.** It decides your track and never reclassifies. Most
    conservative and balanced `her2-2026-11-07` output fails novelty (6% and 0% pass rates per the
    task PDF); `her2-novel-2026-11-09` passes 86%.
@@ -182,10 +243,18 @@ and "we ranked by ipTM" is the answer the judges will have heard most often.
 
 ---
 
-## 7. Caveats
+## 8. Caveats
 
 - Figures and numbers from the task PDF were extracted with a custom stdlib parser (no poppler on
   the VM); body text was clean, figure wording is approximate.
+- **Correction (14 Nov):** an earlier version of this file stated that 454 SPR-measured
+  VHH–antigen non-binders were present in `sigma2-ab-ag-champloo/` and
+  `zenodo-18390239-ab-ag-complexes/`. They are not — the PDF lists them as unpublished. See §6.4.
+  `CLAUDE.md` repeats the same claim and needs the same fix.
+- The ~8,100 off-diagonal ipTM cells are shuffled pairs assumed not to bind, not measured
+  non-binders. Treating them as measured would overstate the calibration set.
+- Only 12 VHH–antigen pairs have a measured non-binding outcome, and the study's authors state
+  that no reportable fit does not confirm non-binding.
 - The FACS↔SPR comparison rests on 27 overlapping measurements. It is enough to show FACS class is
   not an affinity label, not enough to quantify the relationship.
 - The PWM is a linear, position-independent model trained on class labels. A richer model on the
