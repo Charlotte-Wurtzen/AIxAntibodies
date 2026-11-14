@@ -3,10 +3,11 @@
 What each script does, grouped by where it sits in the pipeline. The pipeline
 itself is documented in [`../filter-and-fold-pipeline.md`](../filter-and-fold-pipeline.md).
 
-The pipeline and gate scripts are stdlib-only. The exceptions: `binding_scoring/`
-has its own `requirements.txt`; `liability.py` needs `biotite` and `numpy`; and
-`stability_solubility.py` needs those plus `torch`, `omegaconf` and the
-ThermoMPNN / ProteinMPNN checkouts.
+The pipeline, gate and ranking scripts are stdlib-only. The exceptions:
+`binding_scoring/` has its own `requirements.txt`; `liability.py` needs
+`biotite` and `numpy`; `stability_solubility.py` needs those plus `torch`,
+`omegaconf` and the ThermoMPNN / ProteinMPNN checkouts; and `merge_results.py`
+needs `pandas`.
 
 ---
 
@@ -278,6 +279,25 @@ likes the sequence more) — sequence–structure compatibility, *not* solubilit
 needs running on the web server for an actual solubility readout. Everything is
 also emitted `*_vs_wt`, since the wild type is scored in the same pass.
 
+### `merge_results.py`
+Joins the two scripts above into the one table the ranker reads. The holo
+liability CSV is the base (all its columns, plus the wild-type row renamed to
+`--wt-name`); the stability CSV is left-joined on `design` with colliding
+columns prefixed `stab_`; and `tier` / `liability_score` from the **apo** run
+come in as `tier_apo` / `liability_score_apo`. One row per design, sorted, no
+ranking.
+
+```bash
+python scripts/merge_results.py stab_sol.csv liability_holo.csv liability_apo.csv \
+    designs_combined.csv --wt-liability wt_liability_refolded.csv
+```
+
+Needs `pandas` — the only script here that does. The committed
+[`designs_combined.csv`](../results_novel/her2-n200-novel-seed50/designs_combined.csv)
+(142 designs × 133 columns) came from this, and `tier_apo` exists because of it,
+which is what lets `score_designs_ziyu.py` gate on the apo fold as well as the
+holo one.
+
 > Both scripts measure or predict **developability, not binding**. A liability
 > or solubility fix changes the sequence, so per `CLAUDE.md` the binding score
 > has to be recomputed afterwards.
@@ -326,7 +346,8 @@ FACS-derived score.
   the selection is made.
 - **A `--top-n` cap.** The shortlist is 20 because the family cap happens to
   land there, not because anything enforces the submission limit.
-- **The `designs_combined.csv` join.** The table itself is committed, so the
-  ranking reruns, but nothing in `scripts/` builds it — it is a join of the
-  `liability.py` (holo and apo) and `stability_solubility.py` outputs made by a
-  `merge_results.py` that lives outside this repo.
+- **The raw developability runs.** `designs_combined.csv` and the
+  `merge_results.py` that builds it are both committed, but its three inputs
+  (`liability_holo.csv`, `liability_apo.csv`, `stab_sol_cpu.csv`) are not — they
+  were written to an unversioned folder on the VM, so the join can be rerun only
+  from the GPU runs, not replayed.
