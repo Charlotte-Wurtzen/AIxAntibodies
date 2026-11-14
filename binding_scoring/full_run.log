@@ -1,0 +1,45 @@
+split: /home/hackathon/hackathon-data/zenodo-10831512-trastuzumab-ngs/ngs_unz/data/affinity_data/her2/her2_aff_large/processed/remove_overlap/clonotype_split/0.7_0.15_0.15
+  train n= 367044  positives= 120505 (32.83%)  clusters=13829
+  val   n=  78651  positives=  25822 (32.83%)  clusters=251
+  test  n=  78651  positives=  25822 (32.83%)  clusters=706
+  one-hot check ok (row sums == 10); features = 201
+
+models (val chooses the winner; test is reported once):
+  0 edit distance (floor)    val AP=0.5176 AUC=0.6993 | test AP=0.5218 AUC=0.7534  [0.0s]
+  1 logistic (edit dist)     val AP=0.5176 AUC=0.6993 | test AP=0.5218 AUC=0.7534  [0.1s]
+/home/hackathon/charlotte/AIxAntibodies/binding_scoring/.venv/lib/python3.12/site-packages/sklearn/linear_model/_logistic.py:1435: FutureWarning: 'n_jobs' has no effect since 1.8 and will be removed in 1.10. You provided 'n_jobs=-1', please leave it unspecified.
+  warnings.warn(msg, category=FutureWarning)
+  2 logistic (one-hot)       val AP=0.9366 AUC=0.9644 | test AP=0.9029 AUC=0.9441  [3.3s]
+      MLP: best val AP 0.9933 at epoch 12 (ran 15)
+  3 MLP 256-128              val AP=0.9933 AUC=0.9963 | test AP=0.9865 AUC=0.9928  [45.0s]
+/home/hackathon/charlotte/AIxAntibodies/binding_scoring/.venv/lib/python3.12/site-packages/lightgbm/sklearn.py:1106: LGBMDeprecationWarning: The argument 'eval_set' is deprecated, use 'eval_X' and 'eval_y' instead.
+  eval_set = _validate_eval_set_Xy(eval_set=eval_set, eval_X=eval_X, eval_y=eval_y)
+      LightGBM: best iteration 300 of 300
+  4 LightGBM                 val AP=0.9908 AUC=0.9949 | test AP=0.9800 AUC=0.9891  [2.8s]
+
+==============================================================================================
+model                         val AP   val AUC   test AP  test AUC    secs
+----------------------------------------------------------------------------------------------
+0 edit distance (floor)       0.5176    0.6993    0.5218    0.7534     0.0
+1 logistic (edit dist)        0.5176    0.6993    0.5218    0.7534     0.1
+2 logistic (one-hot)          0.9366    0.9644    0.9029    0.9441     3.3
+3 MLP 256-128                 0.9933    0.9963    0.9865    0.9928    45.0
+4 LightGBM                    0.9908    0.9949    0.9800    0.9891     2.8
+==============================================================================================
+
+winner on val: 3 MLP 256-128
+
+threshold from val (max F1): 0.6994  precision=0.966 recall=0.962 F1=0.964
+
+val operating points (pick a permissive gate deliberately):
+    thr  precision   recall  pass rate
+   0.30      0.930    0.982      0.346
+   0.40      0.942    0.978      0.341
+   0.50      0.950    0.973      0.336
+   0.60      0.958    0.968      0.332
+   0.70      0.966    0.962      0.327
+
+at that threshold on test: precision=0.945 recall=0.939 pass_rate=0.326
+
+wrote /home/hackathon/charlotte/AIxAntibodies/binding_scoring/model/gate.joblib
+wrote /home/hackathon/charlotte/AIxAntibodies/binding_scoring/model/metrics.json

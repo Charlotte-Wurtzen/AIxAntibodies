@@ -1,0 +1,127 @@
+{
+  "task": "binary high vs {mid, low} FACS binding class",
+  "warning": "P(high) is a predicted FACS binding class, NOT an affinity/KD estimate",
+  "split_dir": "/home/hackathon/hackathon-data/zenodo-10831512-trastuzumab-ngs/ngs_unz/data/affinity_data/her2/her2_aff_large/processed/remove_overlap/clonotype_split/0.7_0.15_0.15",
+  "quick": false,
+  "seed": 0,
+  "feature_spec": {
+    "cdrh3_len": 10,
+    "alphabet": "ACDEFGHIKLMNPQRSTVWY",
+    "layout": "onehot(10x20) flattened, then edit_distance_to_trastuzumab/10",
+    "n_features": 201,
+    "reference_cdrh3": "WGGDGFYAMD"
+  },
+  "n_train": 367044,
+  "n_val": 78651,
+  "n_test": 78651,
+  "positive_rate_test": 0.32831114671142136,
+  "selected_on": "val average_precision",
+  "winner": "3 MLP 256-128",
+  "threshold": 0.6993884444236755,
+  "threshold_source": "max F1 on val",
+  "val_operating_points": [
+    {
+      "threshold": 0.3,
+      "precision": 0.9302410920700158,
+      "recall": 0.9817210130896135,
+      "pass_rate": 0.3464800193258827
+    },
+    {
+      "threshold": 0.4,
+      "precision": 0.941544885177453,
+      "recall": 0.9780807063744095,
+      "pass_rate": 0.3410509720156133
+    },
+    {
+      "threshold": 0.5,
+      "precision": 0.9498431417016291,
+      "recall": 0.9732011463093486,
+      "pass_rate": 0.33638478849601405
+    },
+    {
+      "threshold": 0.6,
+      "precision": 0.9579629061925199,
+      "recall": 0.9681279529083727,
+      "pass_rate": 0.3317948913554818
+    },
+    {
+      "threshold": 0.7,
+      "precision": 0.9661649749154124,
+      "recall": 0.9620865928278213,
+      "pass_rate": 0.32692527749170386
+    }
+  ],
+  "test_at_threshold": {
+    "threshold": 0.6993884444236755,
+    "precision": 0.9448665497759595,
+    "recall": 0.939121679188289,
+    "pass_rate": 0.32631498645916773
+  },
+  "results": [
+    {
+      "model": "0 edit distance (floor)",
+      "val": {
+        "roc_auc": 0.6992978442308722,
+        "avg_precision": 0.5176465039300809
+      },
+      "test": {
+        "roc_auc": 0.753438568701321,
+        "avg_precision": 0.5217611497294942
+      },
+      "train_seconds": 0.0,
+      "note": "no model; score = -edit_distance"
+    },
+    {
+      "model": "1 logistic (edit dist)",
+      "val": {
+        "roc_auc": 0.6992978442308722,
+        "avg_precision": 0.5176465039300809
+      },
+      "test": {
+        "roc_auc": 0.753438568701321,
+        "avg_precision": 0.5217611497294942
+      },
+      "train_seconds": 0.1,
+      "note": ""
+    },
+    {
+      "model": "2 logistic (one-hot)",
+      "val": {
+        "roc_auc": 0.9643920126791763,
+        "avg_precision": 0.9365808482093593
+      },
+      "test": {
+        "roc_auc": 0.9440886922179768,
+        "avg_precision": 0.9029030479254234
+      },
+      "train_seconds": 3.3,
+      "note": ""
+    },
+    {
+      "model": "3 MLP 256-128",
+      "val": {
+        "roc_auc": 0.996322484778618,
+        "avg_precision": 0.9933109500167122
+      },
+      "test": {
+        "roc_auc": 0.992826073483253,
+        "avg_precision": 0.9865139338665802
+      },
+      "train_seconds": 45.0,
+      "note": "early stopped at epoch 12 on val AP"
+    },
+    {
+      "model": "4 LightGBM",
+      "val": {
+        "roc_auc": 0.9949265225394445,
+        "avg_precision": 0.9908129207622532
+      },
+      "test": {
+        "roc_auc": 0.9891368832298832,
+        "avg_precision": 0.9800390837147944
+      },
+      "train_seconds": 2.8,
+      "note": "best_iteration=300"
+    }
+  ]
+}
