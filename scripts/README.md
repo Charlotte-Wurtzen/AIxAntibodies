@@ -146,11 +146,17 @@ shortlist with a keep/cut reason per design.
 
 ```bash
 python3 scripts/score_designs_ziyu.py \
-    --interface      results_novel/<run>/iptm_binder_antigen.csv \
-    --classifier     <run>/passing.with_p_high.csv \
-    --developability results/designs_combined.csv \
+    --interface      results_novel/her2-n200-novel-seed50/iptm_binder_antigen.csv \
+    --classifier     results_novel/her2-n200-novel-seed50/passing.with_p_high.csv \
+    --developability results_novel/her2-n200-novel-seed50/designs_combined.csv \
     -o scored_designs.csv          # add --keep-all for all designs + verdicts
 ```
+
+All three inputs are committed under
+[`../results_novel/her2-n200-novel-seed50/`](../results_novel/her2-n200-novel-seed50/),
+so this command reruns from a clean checkout. The ranking logic is written up in
+[`../ranking-logic.md`](../ranking-logic.md) and the top 4, with tracks, in
+[`../submission_top4.csv`](../submission_top4.csv).
 
 Three deliberate choices, all argued in the module docstring:
 
@@ -185,8 +191,9 @@ dropped by it stay in the output as `held_family_cap` / `duplicate_cdrh3`.
 ⚠ The `tier` column is an **ipTM band against the references** (A > 0.40,
 B > `--ref-best`, C > `--ref-iptm`) — it is *not* Adaptyv's S/A/B outcome tier.
 
-Measured on `her2-n200-novel-seed50`: 142 designs → 27 pass both gates → 24
-unique CDRH3 → 20 selected (A=6, B=9, C=5), in
+Measured on `her2-n200-novel-seed50`: 142 designs → 118 pass developability →
+27 also clear the interface threshold → 23 unique CDRH3 → 20 selected
+(A=6, B=9, C=5), in
 [`../scored_designs.csv`](../scored_designs.csv) with the full cohort in
 [`../scored_designs_all.csv`](../scored_designs_all.csv).
 
@@ -319,8 +326,7 @@ FACS-derived score.
   the selection is made.
 - **A `--top-n` cap.** The shortlist is 20 because the family cap happens to
   land there, not because anything enforces the submission limit.
-- **A rerunnable path from a clean checkout.** `score_designs_ziyu.py` reads
-  `designs_combined.csv` and the classifier table from outside this repo
-  (`/home/hackathon/results/`, `/home/hackathon/ziyu/`), and nothing here builds
-  `designs_combined.csv` — it is a hand-made join of the `liability.py` and
-  `stability_solubility.py` outputs.
+- **The `designs_combined.csv` join.** The table itself is committed, so the
+  ranking reruns, but nothing in `scripts/` builds it — it is a join of the
+  `liability.py` (holo and apo) and `stability_solubility.py` outputs made by a
+  `merge_results.py` that lives outside this repo.
