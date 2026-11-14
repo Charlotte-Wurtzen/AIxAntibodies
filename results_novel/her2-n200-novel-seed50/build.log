@@ -1,0 +1,7 @@
+run        /home/hackathon/george/rfd4/runs/her2-n200-novel-seed50
+checkpoint rfd4-proteina-her2-novel-2026-11-09-ema.ckpt
+seed       50.0
+spec       /work/Data/12-her2/her2_cdrh3.yaml
+designs    200 in metrics, 200 written to /home/hackathon/charlotte/AIxAntibodies/results_balanced/her2-n200-novel-seed50/submission.csv
+kind       paired
+sidecar    200 rows, 9 columns -> /home/hackathon/charlotte/AIxAntibodies/results_balanced/her2-n200-novel-seed50/design_metrics.csv

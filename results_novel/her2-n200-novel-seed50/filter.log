@@ -1,0 +1,4 @@
+report     142 valid, 58 rejected (/home/hackathon/charlotte/AIxAntibodies/results_balanced/her2-n200-novel-seed50/report.json)
+queries    200 in queries.json -> 142 kept -> /home/hackathon/george/rfd4/runs/her2-n200-novel-seed50/prepared/holo/queries.pass.json
+report     142 valid, 58 rejected (/home/hackathon/charlotte/AIxAntibodies/results_balanced/her2-n200-novel-seed50/report.json)
+queries    200 in queries.json -> 142 kept -> /home/hackathon/george/rfd4/runs/her2-n200-novel-seed50/prepared/apo/queries.pass.json
